@@ -1,133 +1,141 @@
-import instagramGetUrl from "instagram-url-direct";
-import axios from "axios";
-import * as cheerio from "cheerio";
+import axios from 'axios';
+import 'dotenv/config';
 
-const HEADERS = {
-  "User-Agent":
-    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
-  Accept: "*/*",
-  "Accept-Language": "en-US,en;q=0.9",
-  Referer: "https://www.instagram.com/",
-  Connection: "keep-alive",
-};
+const RAPIDAPI_KEY = process.env.RAPIDAPI_KEY;
+const RAPIDAPI_HOST = process.env.RAPIDAPI_HOST;
+
+const apiClient = axios.create({
+  baseURL: `https://${RAPIDAPI_HOST}`,
+  headers: {
+    'x-rapidapi-key': RAPIDAPI_KEY,
+    'x-rapidapi-host': RAPIDAPI_HOST
+  }
+});
 
 /**
- * Get user profile picture in high quality
+ * Get user profile picture
  */
 export const getUserDP = async (username) => {
   try {
-    const response = await axios.get(
-      `https://www.instagram.com/${username}/?__a=1&__d=dis`,
-      { headers: HEADERS },
-    );
-    const user = response.data.graphql?.user || response.data.user;
-    if (user?.profile_pic_url_hd) return user.profile_pic_url_hd;
-
-    // Fallback scrape
-    const htmlRes = await axios.get(`https://www.instagram.com/${username}/`, {
-      headers: HEADERS,
+    const response = await apiClient.get('/get_user_info_v2.php', {
+      params: { username_or_url: username }
     });
-    const $ = cheerio.load(htmlRes.data);
-    const ogImage = $('meta[property="og:image"]').attr("content");
-    if (ogImage) return ogImage;
-
-    throw new Error("DP not found");
+    
+    // The API response structure varies, so we use optional chaining
+    const data = response.data?.data;
+    const avatar = data?.profile_pic_url_hd || data?.profile_pic_url;
+    
+    if (!avatar) throw new Error('Profile picture not found');
+    return avatar;
   } catch (error) {
-    console.error("DP Fetch Error:", error.message);
-    return `https://www.instadp.io/api/profile/${username}`;
+    console.error('RapidAPI DP Error:', error.response?.data || error.message);
+    throw new Error('Could not fetch profile picture via API.');
   }
 };
 
 /**
- * Get media URLs (Handles Reels, Videos, Carousels)
+ * Get media URLs for a post or reel (Handles high quality & carousels)
  */
 export const getPostMedia = async (url) => {
   try {
-    // Primary: Use specialized library for high-quality direct links
-    const result = await instagramGetUrl(url);
+    const response = await apiClient.get('/get_post_info_v2.php', {
+      params: { url_or_shortcode: url }
+    });
 
-    if (result && result.url_list && result.url_list.length > 0) {
-      return {
-        media: result.url_list.map((link) => ({
-          url: link,
-          type:
-            link.includes(".mp4") || link.includes("video") ? "video" : "photo",
-        })),
-        caption: "Downloaded via InstaSaver",
-        username: "instagram_user",
-      };
-    }
+    const data = response.data?.data;
+    if (!data) throw new Error('Media data not found in API response');
 
-    // Secondary: Manual Extract if library fails
-    const shortcode = url.match(/(?:p|reels|reel)\/([a-zA-Z0-9_-]+)/)?.[1];
-    const res = await axios.get(
-      `https://www.instagram.com/p/${shortcode}/?__a=1&__d=dis`,
-      { headers: HEADERS },
-    );
-    const item = res.data.items?.[0] || res.data.graphql?.shortcode_media;
-
-    if (item) {
-      const media = [];
-      if (item.edge_sidecar_to_children) {
-        item.edge_sidecar_to_children.edges.forEach((edge) => {
-          media.push({
-            url: edge.node.video_url || edge.node.display_url,
-            type: edge.node.is_video ? "video" : "photo",
-          });
-        });
-      } else {
-        media.push({
-          url: item.video_url || item.display_url,
-          type: item.is_video ? "video" : "photo",
-        });
-      }
+    // Handle Carousels (multiple items)
+    if (data.carousel_media && data.carousel_media.length > 0) {
+      const media = data.carousel_media.map(item => ({
+        url: item.video_url || item.image_url || item.display_url,
+        type: item.video_url || item.is_video ? 'video' : 'photo'
+      }));
       return {
         media,
-        caption: item.edge_media_to_caption?.edges[0]?.node?.text || "",
-        username: item.owner?.username || "instagram_user",
+        caption: data.caption?.text || 'InstaSaver Download',
+        username: data.user?.username || 'instagram_user',
+        likes: data.like_count || 0
       };
     }
 
-    throw new Error("No media found");
+    // Single item (Photo/Video/Reel)
+    const mediaUrl = data.video_url || data.image_url || data.display_url;
+    const isVideo = data.video_url || data.is_video || false;
+
+    return {
+      media: [{
+        url: mediaUrl,
+        type: isVideo ? 'video' : 'photo'
+      }],
+      caption: data.caption?.text || 'InstaSaver Download',
+      username: data.user?.username || 'instagram_user',
+      likes: data.like_count || 0
+    };
   } catch (error) {
-    console.error("Post Media Error:", error.message);
-    throw new Error(
-      "Failed to fetch media in high quality. The post might be private or Instagram is blocking the request.",
-    );
+    console.error('RapidAPI Media Error:', error.response?.data || error.message);
+    throw new Error('Failed to fetch media. Post might be private or API limit reached.');
   }
 };
 
 /**
- * Get user's latest posts (High Quality)
+ * Get user's latest posts
  */
 export const getUserPosts = async (username, count = 3) => {
   try {
-    const res = await axios.get(
-      `https://www.instagram.com/${username}/?__a=1&__d=dis`,
-      { headers: HEADERS },
-    );
-    const user = res.data.graphql?.user || res.data.user;
-    const posts = user?.edge_owner_to_timeline_media?.edges || [];
+    const response = await apiClient.get('/get_user_posts.php', {
+      params: { username_or_url: username }
+    });
 
-    return posts.slice(0, count).map((p) => ({
-      id: p.node.id,
-      shortcode: p.node.shortcode,
-      photo: p.node.display_url,
-      isVideo: p.node.is_video,
-      description: p.node.edge_media_to_caption?.edges[0]?.node?.text || "",
-      time: p.node.taken_at_timestamp,
-      username: username,
+    const posts = response.data?.data?.items || [];
+    if (posts.length === 0) throw new Error('No public posts found.');
+
+    return posts.slice(0, count).map(p => ({
+      id: p.id,
+      shortcode: p.code,
+      photo: p.image_url || p.display_url,
+      isVideo: p.is_video || !!p.video_url,
+      description: p.caption?.text || '',
+      time: p.taken_at,
+      username: username
     }));
   } catch (error) {
-    throw new Error("Could not fetch user posts.");
+    console.error('RapidAPI User Posts Error:', error.response?.data || error.message);
+    throw new Error('Could not fetch latest posts.');
   }
 };
 
 /**
- * Get Story Media (Stub - requires session ID for production)
+ * Get Story Media
  */
-export const getStoryMedia = async (username) => {
-  throw new Error(
-    "Story download requires session login. Currently only public posts/reels are supported.",
-  );
+export const getStoryMedia = async (url) => {
+  try {
+    // Determine if it's a URL or username
+    const username = url.includes('instagram.com') ? url.match(/stories\/([a-zA-Z0-9._]+)/)?.[1] : url;
+    
+    const response = await apiClient.get('/get_user_stories.php', {
+      params: { username_or_url: username }
+    });
+
+    const stories = response.data?.data?.items || [];
+    if (stories.length === 0) throw new Error('No active stories found for this user.');
+
+    // If it's a specific story link, try to find that specific one
+    const storyId = url.match(/stories\/[a-zA-Z0-9._]+\/([0-9]+)/)?.[1];
+    let selectedStories = stories;
+    
+    if (storyId) {
+      const match = stories.find(s => s.id === storyId || s.pk === storyId);
+      if (match) selectedStories = [match];
+    }
+
+    return selectedStories.map(s => ({
+      url: s.video_url || s.image_url || s.display_url,
+      type: s.is_video || !!s.video_url ? 'video' : 'photo',
+      caption: `Story by @${username}`
+    }));
+  } catch (error) {
+    console.error('RapidAPI Story Error:', error.response?.data || error.message);
+    throw new Error('Failed to fetch stories.');
+  }
 };

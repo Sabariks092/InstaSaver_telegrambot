@@ -1,5 +1,10 @@
 import { Markup } from "telegraf";
-import { getUserDP, getPostMedia, getUserPosts } from "./instagram.js";
+import {
+  getUserDP,
+  getPostMedia,
+  getUserPosts,
+  getStoryMedia,
+} from "./instagram.js";
 import { parseUsername, parseShortcode, formatCaption } from "./utils.js";
 
 export const startHandler = (ctx) => {
@@ -7,7 +12,7 @@ export const startHandler = (ctx) => {
 🌟 *Welcome to InstaSaver Bot!* 🌟
 
 Download Instagram content easily:
-- Send me an Instagram link (Post/Reel)
+- Send me an Instagram link (Post/Reel/Story)
 - Use /dp @username to get profile picture
 - Use /user @username to get recent posts
 - Or just type the username!
@@ -15,7 +20,7 @@ Download Instagram content easily:
 *Commands:*
 /start - Welcome message
 /dp @username - Download profile pic
-/post [link] - Download post/reel
+/post [link] - Download post/reel/story
 /user @username - Get latest 3 posts
 /help - Show this message
   `;
@@ -52,13 +57,18 @@ export const dpHandler = async (ctx, input) => {
 
 export const postHandler = async (ctx, input) => {
   const url = input || ctx.message.text;
+
+  if (url.includes("/stories/")) {
+    return storyHandler(ctx, url);
+  }
+
   const shortcode = parseShortcode(url);
   if (!shortcode)
     return ctx.reply("Please provide a valid Instagram Post or Reel link.");
 
   const loading = await ctx.reply("🎬 Fetching Media...");
   try {
-    const data = await getPostMedia(shortcode);
+    const data = await getPostMedia(url);
     const mediaGroup = data.media.map((m, index) => ({
       type: m.type,
       media: m.url,
@@ -82,7 +92,28 @@ export const postHandler = async (ctx, input) => {
         await ctx.replyWithPhoto(m.url, { caption: mediaGroup[0].caption });
       }
     } else {
-      await ctx.replyWithMediaGroup(mediaGroup);
+      // Split into groups of 10 (Telegram limit)
+      for (let i = 0; i < mediaGroup.length; i += 10) {
+        await ctx.replyWithMediaGroup(mediaGroup.slice(i, i + 10));
+      }
+    }
+  } catch (error) {
+    ctx.reply(`❌ Error: ${error.message}`);
+  } finally {
+    ctx.telegram.deleteMessage(ctx.chat.id, loading.message_id).catch(() => {});
+  }
+};
+
+export const storyHandler = async (ctx, url) => {
+  const loading = await ctx.reply("🎞️ Fetching Story...");
+  try {
+    const stories = await getStoryMedia(url);
+    for (const s of stories) {
+      if (s.type === "video") {
+        await ctx.replyWithVideo(s.url, { caption: s.caption });
+      } else {
+        await ctx.replyWithPhoto(s.url, { caption: s.caption });
+      }
     }
   } catch (error) {
     ctx.reply(`❌ Error: ${error.message}`);
@@ -123,7 +154,7 @@ export const helpHandler = (ctx) => {
 📖 *Available Commands:*
 /start - Start the bot
 /dp @username - Get high-quality profile picture
-/post [link] - Get media from post or reel
+/post [link] - Get media from post, reel or story
 /user @username - Get latest 3 posts
 /help - Show this guide
   `;
