@@ -22,7 +22,7 @@ Download Instagram content easily:
   ctx.replyWithMarkdown(
     welcomeMessage,
     Markup.inlineKeyboard([
-      [Markup.button.url("Follow Developer", "https://github.com/bartholomej")],
+      [Markup.button.url("Follow Developer", "https://github.com/Sabariks092")],
     ]),
   );
 };
