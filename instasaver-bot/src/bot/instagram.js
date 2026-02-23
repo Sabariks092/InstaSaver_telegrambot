@@ -1,188 +1,133 @@
+import instagramGetUrl from "instagram-url-direct";
 import axios from "axios";
 import * as cheerio from "cheerio";
 
 const HEADERS = {
   "User-Agent":
-    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  Accept:
-    "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8",
+    "Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1",
+  Accept: "*/*",
   "Accept-Language": "en-US,en;q=0.9",
-  "Sec-Fetch-Dest": "document",
-  "Sec-Fetch-Mode": "navigate",
-  "Sec-Fetch-Site": "none",
-  "Sec-Fetch-User": "?1",
-  "Upgrade-Insecure-Requests": "1",
+  Referer: "https://www.instagram.com/",
+  Connection: "keep-alive",
 };
 
 /**
- * Helper to extract JSON from Instagram HTML
- */
-const extractJSON = (html) => {
-  try {
-    // Priority 1: __additionalDataLoaded (Current standard)
-    const additionalDataMatch = html.match(
-      /__additionalDataLoaded\('[^']+',\s*({.+})\);/,
-    );
-    if (additionalDataMatch) return JSON.parse(additionalDataMatch[1]);
-
-    // Priority 2: _sharedData (Old standard, some pages still have it)
-    const sharedDataMatch = html.match(/window\._sharedData\s?=\s?({.+});/);
-    if (sharedDataMatch) return JSON.parse(sharedDataMatch[1]);
-
-    // Priority 3: Search for any script tag containing "graphql" or "user"
-    const $ = cheerio.load(html);
-    let jsonData = null;
-    $("script").each((i, el) => {
-      const text = $(el).text();
-      if (text.includes('{"user":{') || text.includes('{"shortcode_media":{')) {
-        try {
-          const parsed = JSON.parse(text);
-          if (parsed.user || parsed.shortcode_media) jsonData = parsed;
-        } catch (e) {}
-      }
-    });
-    return jsonData;
-  } catch (e) {
-    return null;
-  }
-};
-
-/**
- * Get user profile picture
+ * Get user profile picture in high quality
  */
 export const getUserDP = async (username) => {
   try {
-    const url = `https://www.instagram.com/${username}/`;
-    const response = await axios.get(url, { headers: HEADERS });
-    const html = response.data;
+    const response = await axios.get(
+      `https://www.instagram.com/${username}/?__a=1&__d=dis`,
+      { headers: HEADERS },
+    );
+    const user = response.data.graphql?.user || response.data.user;
+    if (user?.profile_pic_url_hd) return user.profile_pic_url_hd;
 
-    // Fallback: If blocked, try a public viewer or use basic regex for meta tags
-    const $ = cheerio.load(html);
+    // Fallback scrape
+    const htmlRes = await axios.get(`https://www.instagram.com/${username}/`, {
+      headers: HEADERS,
+    });
+    const $ = cheerio.load(htmlRes.data);
     const ogImage = $('meta[property="og:image"]').attr("content");
-
     if (ogImage) return ogImage;
 
-    const data = extractJSON(html);
-    const avatar =
-      data?.user?.profile_pic_url_hd || data?.graphql?.user?.profile_pic_url_hd;
-
-    if (!avatar) throw new Error("Could not find avatar in page source.");
-    return avatar;
+    throw new Error("DP not found");
   } catch (error) {
-    console.error("Error in getUserDP:", error.message);
-    // Final fallback to a public API if scraping fails
+    console.error("DP Fetch Error:", error.message);
     return `https://www.instadp.io/api/profile/${username}`;
   }
 };
 
 /**
- * Get user's latest posts
+ * Get media URLs (Handles Reels, Videos, Carousels)
  */
-export const getUserPosts = async (username, count = 3) => {
+export const getPostMedia = async (url) => {
   try {
-    const url = `https://www.instagram.com/${username}/`;
-    const response = await axios.get(url, { headers: HEADERS });
-    const data = extractJSON(response.data);
+    // Primary: Use specialized library for high-quality direct links
+    const result = await instagramGetUrl(url);
 
-    const user = data?.user || data?.graphql?.user;
-    const posts = user?.edge_owner_to_timeline_media?.edges || [];
-
-    if (posts.length === 0) {
-      throw new Error("No public posts found or Instagram is blocking access.");
+    if (result && result.url_list && result.url_list.length > 0) {
+      return {
+        media: result.url_list.map((link) => ({
+          url: link,
+          type:
+            link.includes(".mp4") || link.includes("video") ? "video" : "photo",
+        })),
+        caption: "Downloaded via InstaSaver",
+        username: "instagram_user",
+      };
     }
 
-    return posts.slice(0, count).map((p) => {
-      const node = p.node;
+    // Secondary: Manual Extract if library fails
+    const shortcode = url.match(/(?:p|reels|reel)\/([a-zA-Z0-9_-]+)/)?.[1];
+    const res = await axios.get(
+      `https://www.instagram.com/p/${shortcode}/?__a=1&__d=dis`,
+      { headers: HEADERS },
+    );
+    const item = res.data.items?.[0] || res.data.graphql?.shortcode_media;
+
+    if (item) {
+      const media = [];
+      if (item.edge_sidecar_to_children) {
+        item.edge_sidecar_to_children.edges.forEach((edge) => {
+          media.push({
+            url: edge.node.video_url || edge.node.display_url,
+            type: edge.node.is_video ? "video" : "photo",
+          });
+        });
+      } else {
+        media.push({
+          url: item.video_url || item.display_url,
+          type: item.is_video ? "video" : "photo",
+        });
+      }
       return {
-        id: node.id,
-        shortcode: node.shortcode,
-        photo: node.display_url,
-        isVideo: node.is_video,
-        description: node.edge_media_to_caption?.edges[0]?.node?.text || "",
-        likesCount: node.edge_liked_by?.count || 0,
-        commentsCount: node.edge_media_to_comment?.count || 0,
-        time: node.taken_at_timestamp,
-        username: username,
+        media,
+        caption: item.edge_media_to_caption?.edges[0]?.node?.text || "",
+        username: item.owner?.username || "instagram_user",
       };
-    });
+    }
+
+    throw new Error("No media found");
   } catch (error) {
-    console.error("Error in getUserPosts:", error.message);
+    console.error("Post Media Error:", error.message);
     throw new Error(
-      "Could not fetch posts. Instagram is currently blocking common scraping methods.",
+      "Failed to fetch media in high quality. The post might be private or Instagram is blocking the request.",
     );
   }
 };
 
 /**
- * Get media URLs for a post or reel
+ * Get user's latest posts (High Quality)
  */
-export const getPostMedia = async (shortcode) => {
+export const getUserPosts = async (username, count = 3) => {
   try {
-    // Method 1: Try public JSON endpoint (sometimes works with good headers)
-    const jsonUrl = `https://www.instagram.com/p/${shortcode}/?__a=1&__d=dis`;
-    try {
-      const jsonRes = await axios.get(jsonUrl, { headers: HEADERS });
-      const item =
-        jsonRes.data.items?.[0] || jsonRes.data.graphql?.shortcode_media;
-      if (item) return parseMediaItem(item);
-    } catch (e) {}
-
-    // Method 2: Scrape the page directly
-    const pageUrl = `https://www.instagram.com/p/${shortcode}/`;
-    const pageRes = await axios.get(pageUrl, { headers: HEADERS });
-    const html = pageRes.data;
-    const $ = cheerio.load(html);
-
-    // Try OpenGraph as first fallback for single media
-    const ogVideo = $('meta[property="og:video"]').attr("content");
-    const ogImage = $('meta[property="og:image"]').attr("content");
-    const ogTitle = $('meta[property="og:title"]').attr("content") || "";
-
-    if (ogVideo) {
-      return {
-        media: [{ url: ogVideo, type: "video" }],
-        caption: ogTitle,
-        username: "instagram_user",
-        likes: 0,
-      };
-    } else if (ogImage) {
-      return {
-        media: [{ url: ogImage, type: "photo" }],
-        caption: ogTitle,
-        username: "instagram_user",
-        likes: 0,
-      };
-    }
-
-    throw new Error("Media data not found in page metadata.");
-  } catch (error) {
-    console.error("Error in getPostMedia:", error.message);
-    throw new Error(
-      "Access Denied. Instagram has strengthened its anti-scraping measures. Try again later.",
+    const res = await axios.get(
+      `https://www.instagram.com/${username}/?__a=1&__d=dis`,
+      { headers: HEADERS },
     );
+    const user = res.data.graphql?.user || res.data.user;
+    const posts = user?.edge_owner_to_timeline_media?.edges || [];
+
+    return posts.slice(0, count).map((p) => ({
+      id: p.node.id,
+      shortcode: p.node.shortcode,
+      photo: p.node.display_url,
+      isVideo: p.node.is_video,
+      description: p.node.edge_media_to_caption?.edges[0]?.node?.text || "",
+      time: p.node.taken_at_timestamp,
+      username: username,
+    }));
+  } catch (error) {
+    throw new Error("Could not fetch user posts.");
   }
 };
 
-const parseMediaItem = (item) => {
-  const media = [];
-  if (item.edge_sidecar_to_children) {
-    item.edge_sidecar_to_children.edges.forEach((edge) => {
-      media.push({
-        url: edge.node.video_url || edge.node.display_url,
-        type: edge.node.is_video ? "video" : "photo",
-      });
-    });
-  } else {
-    media.push({
-      url: item.video_url || item.display_url,
-      type: item.is_video ? "video" : "photo",
-    });
-  }
-
-  return {
-    media,
-    caption: item.edge_media_to_caption?.edges[0]?.node?.text || "",
-    username: item.owner?.username || "instagram_user",
-    likes: item.edge_media_preview_like?.count || item.like_count || 0,
-  };
+/**
+ * Get Story Media (Stub - requires session ID for production)
+ */
+export const getStoryMedia = async (username) => {
+  throw new Error(
+    "Story download requires session login. Currently only public posts/reels are supported.",
+  );
 };
