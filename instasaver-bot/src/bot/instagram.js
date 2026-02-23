@@ -7,12 +7,15 @@ import axios from "axios";
 export const getUserDP = async (username) => {
   try {
     const user = await instagram.user(username);
+    if (!user || user === "Error" || !user.avatar) {
+      throw new Error(
+        "Public profile data unavailable. It might be private or invalid.",
+      );
+    }
     return user.avatar;
   } catch (error) {
     console.error("Error in getUserDP:", error.message);
-    throw new Error(
-      "Could not fetch profile picture. Profile might be private or invalid.",
-    );
+    throw new Error(error.message || "Could not fetch profile picture.");
   }
 };
 
@@ -22,7 +25,12 @@ export const getUserDP = async (username) => {
 export const getUserPosts = async (username, count = 3) => {
   try {
     const user = await instagram.user(username);
-    if (!user.posts || user.posts.length === 0) {
+    if (!user || user === "Error" || !user.posts) {
+      throw new Error(
+        "Public data unavailable. Profile might be private or Instagram is blocking the request.",
+      );
+    }
+    if (user.posts.length === 0) {
       throw new Error("No public posts found for this user.");
     }
     return user.posts.slice(0, count).map((post) => ({
@@ -31,9 +39,7 @@ export const getUserPosts = async (username, count = 3) => {
     }));
   } catch (error) {
     console.error("Error in getUserPosts:", error.message);
-    throw new Error(
-      "Could not fetch user posts. Profile might be private or invalid.",
-    );
+    throw new Error(error.message || "Could not fetch user posts.");
   }
 };
 

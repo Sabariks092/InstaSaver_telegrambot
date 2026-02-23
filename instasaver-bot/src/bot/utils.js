@@ -12,6 +12,13 @@ export const formatCaption = (post) => {
 };
 
 export const parseUsername = (text) => {
+  // Handle full URLs
+  if (text.includes("instagram.com/")) {
+    const parts = text.split("/");
+    const userIndex = parts.findIndex((p) => p.includes("instagram.com")) + 1;
+    return parts[userIndex]?.split("?")[0] || null;
+  }
+  // Handle @username or just username
   const match = text.match(/@?([a-zA-Z0-9._]+)/);
   return match ? match[1] : null;
 };
