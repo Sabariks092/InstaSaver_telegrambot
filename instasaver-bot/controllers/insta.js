@@ -1,40 +1,57 @@
-const axios = require('axios');
-require('dotenv').config();
+const axios = require("axios");
+require("dotenv").config();
 
-//API.
-const APIKey = process.env.RAPID_API_KEY
-const APIHost = process.env.RAPID_API_HOST
+const APIKey = process.env.RAPID_API_KEY;
+const APIHost = "instagram-looter2.p.rapidapi.com"; // Fixed host
 
-//Scrapping data from Instagram
-const instaScrapper = async (url) => {
+const fetchFromAPI = async (endpoint, params) => {
   const options = {
-    method: 'GET',
-    url: 'https://instagram-looter2.p.rapidapi.com/post-dl',
-    params: {
-      link: url
-    },
+    method: "GET",
+    url: `https://${APIHost}${endpoint}`,
+    params,
     headers: {
-      'X-RapidAPI-Key': APIKey,
-      'X-RapidAPI-Host': APIHost
-    }
+      "X-RapidAPI-Key": APIKey,
+      "X-RapidAPI-Host": APIHost,
+    },
   };
 
   try {
     const response = await axios.request(options);
-      return response.data.data.medias;
+    return response.data;
   } catch (error) {
-      return error;
+    console.error(
+      `API Error (${endpoint}):`,
+      error.response?.data || error.message,
+    );
+    throw new Error(
+      error.response?.data?.message || "Failed to fetch from Instagram API",
+    );
   }
-}
+};
 
-/* (async () => {
-  try {
-    const result = await instaScrapper('https://www.instagram.com/p/CqIbCzYMi5C/');
-    
-    console.log(result);
-  } catch (error) {
-    console.error(error);
-  }
-})();
- */
-module.exports = instaScrapper
+const instaScrapper = {
+  // Download Post/Reel Media
+  getPostMedia: async (url) => {
+    const data = await fetchFromAPI("/post-dl", { link: url });
+    // Structure: data.data.medias
+    return data && data.data ? data.data.medias : [];
+  },
+
+  // Get Profile Info / DP
+  getProfileInfo: async (username) => {
+    return await fetchFromAPI("/profile-info", { username });
+  },
+
+  // Get Stories
+  getStories: async (username) => {
+    const data = await fetchFromAPI("/stories", { username });
+    return data && data.items ? data.items : [];
+  },
+
+  // Get Highlights
+  getHighlights: async (username) => {
+    return await fetchFromAPI("/highlights", { username });
+  },
+};
+
+module.exports = instaScrapper;
