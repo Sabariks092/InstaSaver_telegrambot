@@ -1,62 +1,53 @@
-# InstaSaver Telegram Bot 🤖
+---
+# 💎 Instagram Media Bot
 
-A production-ready Telegram bot to download Instagram posts, reels, and profile pictures. Built with Node.js, Telegraf, and `instagram-scraper-api`.
+This is a Telegram bot that fetches media (photos and videos) from Instagram links and sends them to users. It's built using Fastify, Nodemon, Axios, and dotenv, making it a fast and efficient solution for handling Instagram links.
 
-## 🚀 Features
-- **Download Media**: Save photos and videos from any public Instagram link.
-- **Profile Picture**: Download high-quality DPs using `@username`.
-- **Recent Posts**: Fetch the latest 3 posts from any public profile.
-- **Smart Parsing**: Automatically detects links and usernames in text.
-- **Rate Limiting**: Integrated protection (5 req/min per user).
-- **Deployment Ready**: Includes Docker and PM2 configurations.
+## ✅ Technologies Used
+- **Fastify:** A high-performance, low overhead web framework for Node.js.
+- **Nodemon:** A utility that monitors for changes in your source code and automatically restarts your server.
+- **Axios:** A promise-based HTTP client for making HTTP requests to fetch Instagram media.
+- **dotenv:** A zero-dependency module for loading environment variables from a `.env` file.
 
-## 🛠️ Tech Stack
-- **Engine**: Node.js 20+
-- **Framework**: Telegraf v4
-- **API**: instagram-scraper-api
-- **Server**: Express (Webhook support)
+## ⚙️ Getting Started
 
-## 📦 Installation
+To run this project locally, follow these steps:
 
-1. Clone the repository and install dependencies:
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/diegormirhan/instagram-downloader.git
+   cd instagram-downloader
+   ```
+
+2. Install the dependencies:
    ```bash
    npm install
    ```
 
-2. Create a `.env` file:
+3. Create a `.env` file in the project root directory and add the following environment variables:
    ```env
-   BOT_TOKEN=your_telegram_bot_token
-   PORT=3000
-   WEBHOOK_URL=https://your-domain.com # Optional, leaves as blank for long polling
+   RAPID_API_KEY=your-rapid-api-key
+   RAPID_API_HOST=your-rapid-api-host
+   TELEGRAM_API=your-telegram-api-token
    ```
 
-3. Start the bot:
+   You can obtain the `RAPID_API_KEY` and `RAPID_API_HOST` by signing up for the [Instagram Looter2 API on RapidAPI](https://rapidapi.com/iq.faceok/api/instagram-looter2).
+
+4. Start the server in development mode using Nodemon:
    ```bash
-   npm start
+   npm run dev
    ```
 
-## 🐳 Docker Deployment
-```bash
-docker build -t instasaver-bot .
-docker run -p 3000:3000 --env-file .env instasaver-bot
-```
+5. Start using your Telegram bot! Send it Instagram links (except for stories), and it will reply with the media files.
 
-## ⚙️ PM2 Deployment
-```bash
-pm2 start ecosystem.config.cjs
-```
+## 📍 Note
 
-## 📖 Bot Commands
-- `/start` - Welcome message
-- `/dp @username` - Download profile picture
-- `/post [link]` - Download media from post/reel
-- `/user @username` - Get latest 3 posts
-- `/help` - Show command list
+Before using the Instagram Looter2 API, make sure to sign up for an API key and host on RapidAPI as mentioned in step 3. This will allow your bot to access the Instagram media data.
 
-## 🧪 Testing
-```bash
-npm test
-```
+Feel free to customize and extend this bot to fit your needs. Happy coding!
 
-## 📝 License
-MIT
+## ⚠️ Disclaimer
+
+This project is entirely my own creation, developed from scratch, leveraging various APIs to create a Telegram bot capable of fetching Instagram media content. It's a testament to my skills in full-stack development and showcases my proficiency in using technologies like Fastify, Nodemon, Axios, and dotenv to build efficient and user-friendly solutions.
+
+---
