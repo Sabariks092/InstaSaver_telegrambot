@@ -3,10 +3,16 @@ const fastify = require("fastify")({
 });
 require("dotenv").config();
 
-// Initialize the bot (it starts polling in controllers/bot.js)
+// 1. REGISTER CORS (Once is enough)
+fastify.register(require('@fastify/cors'), { 
+  origin: '*', 
+  methods: ['GET', 'POST']
+});
+
+// 2. CONTROLLERS
 const bot = require("./controllers/bot");
 
-// Health check route for Render
+// 3. ROUTES (Delete the duplicates, keep one of each)
 fastify.get("/", async (request, reply) => {
   return { status: "ok", message: "InstaSaver Bot is running" };
 });
@@ -15,7 +21,7 @@ fastify.get("/health", async (request, reply) => {
   return { status: "ok" };
 });
 
-// Run the server
+// 4. RUN SERVER
 const start = async () => {
   try {
     const port = process.env.PORT || 3000;
